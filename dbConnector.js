@@ -1,14 +1,25 @@
 "use strict";
+require('events').EventEmitter.prototype._maxListeners = 100;
 var express = require("express");
-var calApp = express();
-var rentApp = express();
-var sio = require('socket.io');
+var app = express();
+var mysql = require('mysql');
+var http = require('http').createServer(app);
+var io = require('socket.io')(http);
+var session = require('express-session');
+var sharedsession = require('express-socket.io-session');
+var MySQLStore = require('express-mysql-session')(session);
+var cookieParser = require('cookie-parser');
 var nodemailer = require('nodemailer');
 var smtpTransport = require('nodemailer-smtp-transport');
-var FB = require('fb');
 var moment = require('moment');
 var schedule = require('node-schedule');
 var Promise = require("bluebird");
+var co = require('co');
+var _ = require('lodash');
+var MenigaClient = require('./meniga-client/index');
+var googleMgr = require("./googleMgr");
+var facebookMgr = require("./facebookMgr");
+
 var tbl_events = "Events";
 var tbl_users = "Users";
 var tbl_meniga = "Meniga";
@@ -17,16 +28,54 @@ var tbl_transactions = "Transactions";
 var tbl_accounts = "Accounts";
 var tbl_event_to_account = "event_to_account";
 var tbl_recurring_events = "Recurring_events"
+var tbl_users_to_bands = "user_to_band";
 var not_authorized = "not_authorized";
 var calendarPort = 3333;
-var starmyriTestID = 226308061043610;
-var starmyriID = 1624982647723413;
-var starmyriAppID = 448772061955380;
-var starmyriAppSecret = "11835fbd75ba01914333e0513aa47b18";
 var epochDay = 24*60*60*1000;
+var mysqlUser = 'calendar_user'
+var mysqlPass = 'Besta!Calendar1'
+var mysqlDatabase = 'Starmyri'
+var cookieSecret = 'gottLeyndarmal';
+
+var NO_USER = 0;
+
+process.setMaxListeners(0);
+
+var pool = mysql.createPool({
+    connectionLimit : 3000,
+    host     : 'localhost',
+    user     : mysqlUser,
+    password : mysqlPass,
+    database : mysqlDatabase
+});
+
+app.set('trust proxy', 1);
+
+var sessionStore = new MySQLStore({createDatabaseTable: true}/* session store options */, pool);
+
+var sessionInstance = session({
+    key: 'starmyri',
+		secret: cookieSecret,
+		resave: true,
+		saveUninitialized: true,
+    store: sessionStore,
+    cookie: {
+      maxAge: 3600000 * 24 * 30 * 2
+    }
+	});
+
+app.use(sessionInstance);
+
+
+app.use(cookieParser(cookieSecret));
+
+app.use("/", express.static(__dirname + '/html'));
+
+googleMgr.init();
 
 let sendQuery = function (query, args, authorized){
-    if(authorized) {
+  //TODO: temp skip login
+    if(true/*authorized*/) {
         return new Promise(
             function(resolve, reject) {
               pool.getConnection(function(err,connection){
@@ -60,35 +109,27 @@ let sendQuery = function (query, args, authorized){
     }
 }
 
-function generateGroupAccess(accessToken){
-    return new Promise(
-        function(resolve, reject) {
-            FB.api('oauth/access_token', {
-                client_id: starmyriAppID,
-                client_secret: starmyriAppSecret,
-                grant_type: 'fb_exchange_token',
-                fb_exchange_token: accessToken
-            }, function (res) {
-                if(!res || res.error) {
-                    console.log(!res ? 'error occurred' : res.error);
-                    return;
-                }
+io.use(
+	sharedsession(sessionInstance, {
+		autoSave: true
+	})
+);
 
-                var accessToken = res.access_token;
-                var expires = res.expires ? res.expires : 0;
-                resolve(accessToken);
-            });
-        }
-    );
-}
+io.on('connection', function(socket){
+    var facebookAuthenticated;
+    var googleAuthenticated;
+    var authenticated;
+    var currentUser = {};
+    var tempGoogleProfile = {};
 
-
-
-var calIO = sio.listen(calendarPort);
-calIO.sockets.on('connection', function (socket) {
-    var socketAuthorized = false;
+    if(socket.handshake.session && socket.handshake.session.currentUser) {
+        currentUser = socket.handshake.session.currentUser;
+        authenticated = true;
+        console.log("Sess");
+        socket.emit("checkLogin", {response: true, user: currentUser});
+      }
     function sendSocketQuery(sql, args) {
-        return sendQuery(sql, args, socketAuthorized)
+        return sendQuery(sql, args, authenticated)
         .catch(function(reason){
             console.log("PROMISE REJECTED:");
             console.log(reason);
@@ -109,21 +150,9 @@ calIO.sockets.on('connection', function (socket) {
         .then(events => socket.emit("allEvents", {events: events}));
     });
     socket.on('saveEvent', function (data) {
-        //TODO:
-        //if(!args[1].published && args[0] != "delete"){
-            //Post to facebook as the current user
-        //    generateGroupAccess(args[1].accessToken, postToFB, args[1]);
-        //}
         var event = data.events;
         event.series = null;
-        var savePromise = sendSocketQuery('INSERT INTO ' + tbl_events + ' SET ?', event)
-        .then(function(result) {
-            event.id = result.insertId;
-            broadcastEvent("events", [event]);
-            if(data.charge){
-                updateOrCreateNewAccount(data.events.title, [result.insertId]);
-            }
-        });
+        insertEvents([event], data.charge, true);
     });
 
     var updateOrCreateNewAccount = function(accountTitle, ids) {
@@ -163,12 +192,12 @@ calIO.sockets.on('connection', function (socket) {
                     startDate.setTime(startDate.getTime() + distance);
                     if(startDate.getTime() < seriesEnd.getTime() && startDate.getTime() > seriesStart.getTime()){
                         endDate.setTime(startDate.getTime() + startEndDiff);
-                        var row = [startDate.getTime()/1000, endDate.getTime()/1000, recurringEvent.title, recurringEvent.body, recurringEvent.creator, recurringEvent.room, recurringEvent.published, rows[0].series+1];
-                        events.push(row);
+                        var event = getEvent(startDate.getTime()/1000, endDate.getTime()/1000, recurringEvent.title, recurringEvent.body, recurringEvent.creator, recurringEvent.room, rows[0].series+1, recurringEvent.attendees);
+                        events.push(event);
                     }
                 };
             }
-            insertEvents(events, data.charge);
+            insertEvents(events, data.charge, false);
         });
     });
     socket.on('saveRecurringEventWithDates', function (data){
@@ -186,18 +215,40 @@ calIO.sockets.on('connection', function (socket) {
                 startDate.setHours(startHours);
                 startDate.setMinutes(startMinutes);
                 var endDate = new Date(startDate.getTime() + difference);
-                var row = [startDate.getTime()/1000, endDate.getTime()/1000, recurringEvent.title, recurringEvent.body, recurringEvent.creator, recurringEvent.room, recurringEvent.published, rows[0].series+1];
-                events.push(row);
+                var event = getEvent(startDate.getTime()/1000, endDate.getTime()/1000, recurringEvent.title, recurringEvent.body, recurringEvent.creator, recurringEvent.room, rows[0].series+1, recurringEvent.attendees);
+                events.push(event);
             });
-            insertEvents(events, data.charge);
+            insertEvents(events, data.charge, false);
         });
     });
-    function insertEvents(events, charge){
-        sendSocketQuery('INSERT INTO ' + tbl_events + ' (start, end, title, body, creator, room, published, series) VALUES ?', [events])
+    function insertEvents(events, charge, broadcast){
+        var eventRows = [];
+        var attendees;
+        events.forEach(function(r) {
+            attendees = [];
+            var eventRow = [r.start, r.end, r.title, r.body, r.creator, r.room, r.series];
+            eventRows.push(eventRow);
+            r.attendees.forEach(function(attendee){
+              attendees.push({'email': attendee})
+            });
+        });
+        sendSocketQuery('INSERT INTO ' + tbl_events + ' (start, end, title, body, creator, room, series) VALUES ?', [eventRows])
         .then(function(rows) {
-            socket.emit('refresh');
-            //TODO:implement charge and event_to_account
-            console.log(rows);
+            if(broadcast) {
+                broadcastEvent("events", events);
+            } else {
+              socket.emit('refresh');
+            }
+            for (var i = 0; i < events.length; i++) {
+              var event = events[i];
+              event.id = rows.insertId + i;
+              googleMgr.createEvent(events[i], attendees)
+              .then(function(google_id){
+                sendSocketQuery('UPDATE ' + tbl_events + ' SET google_id=? WHERE id=?', [google_id, event.id])
+              });
+            }
+
+            //TODO:test charge and event_to_account
             if(charge && events.length > 0){
                 var ids = [];
                 for (var i = 0; i < rows.affectedRows; i++) {
@@ -208,7 +259,21 @@ calIO.sockets.on('connection', function (socket) {
         });
     }
 
+    function getEvent(start, end, title, body, creator, room, series, attendees) {
+      var event = {};
+      event.start = start;
+      event.end = end;
+      event.title = title;
+      event.body = body;
+      event. creator = creator;
+      event.room = room;
+      event.series = series;
+      event.attendees = attendees;
+      return event;
+    }
+
     socket.on('getAllEventsWithinTime', function (data) {
+      console.log("FETCHING EVENTS");
         sendSocketQuery('SELECT * FROM ' + tbl_events + ' WHERE (start > ? AND start < ?) OR (start < ? AND end > ?) OR (end > ? AND end < ?)', [data.start, data.end, data.start, data.end, data.start, data.end])
         .then(function(events) {
             socket.emit("events", {events: events})
@@ -218,6 +283,7 @@ calIO.sockets.on('connection', function (socket) {
     socket.on('editEvent', function (data) {
         var calEvent = data.events;
         calEvent.series = null;
+        delete calEvent.attendees;
         sendSocketQuery('UPDATE ' + tbl_events + ' SET ? WHERE id=?', [calEvent, calEvent.id])
         .then(function(rows) {
             broadcastEvent("editEvent", calEvent);
@@ -239,58 +305,251 @@ calIO.sockets.on('connection', function (socket) {
         sendSocketQuery('DELETE FROM ' + tbl_events + ' WHERE series=?', series)
         .then(socket.emit("refresh"));
     });
+    socket.on('signOut', function (data) {
+      authenticated = false;
+      if (socket.handshake.session.currentUser) {
+          delete socket.handshake.session.currentUser;
+          socket.handshake.session.save();
+      }
+    });
     socket.on('checkLogin', function (data) {
-        sendQuery('SELECT * FROM ' + tbl_users + ' WHERE fb_id=? AND disabled=0', data.id, true)
-        .then(function(rows){
-            if(rows.length != 0){
-                socketAuthorized = true;
-                //Emit login response and rent data
-                if(rows[0].rentBalance === null){
-                    console.log("band");
-                    if(rows[0].band1) {
-                        sendSocketQuery('SELECT rentBalance, bandName FROM ' + tbl_bands + ' WHERE id=?', rows[0].band1)
-                        .then(bandRows => socket.emit("checkLogin", {response: true, id: rows[0].id, balance: bandRows[0].rentBalance, band: bandRows[0].bandName}));
-                    } else {
-                        //Tilraun gaman?
-                        socket.emit("checkLogin", {response: true, id: rows[0].id, balance: rows[0].rentBalance, name: rows[0].name});
-                    }
-                } else{
-                    //individual
-                    socket.emit("checkLogin", {response: true, id: rows[0].id, balance: rows[0].rentBalance, name: rows[0].name});
+      console.log("CHECK");
+      console.log(data);
+      if(authenticated && currentUser) {
+        console.log("ALREADY AUTHENTICATED");
+        socket.emit("checkLogin", {response: true, user: currentUser});
+        return;
+      } else if(socket.handshake.session && socket.handshake.session.currentUser) {
+        console.log("SESSION");
+          currentUser = socket.handshake.session.currentUser;
+          authenticated = true;
+          socket.emit("checkLogin", {response: true, user: currentUser});
+      } else {
+        console.log("NO SESSH");
+          var authPromise;
+          var dbPromise;
+          if(data.facebookAccessToken) {
+            authPromise = facebookMgr.generateAppAccess(data.facebookAccessToken)
+            .then(accessToken => facebookMgr.validateAccessToken(accessToken, data.fbId, data.facebookAccessToken));
+            dbPromise = checkFacebookUser(data.fbId);
+          } else if(data.googleIdToken) {
+            authPromise = googleMgr.validateAccessToken(data.googleIdToken, data.googleId);
+            dbPromise = checkGoogleUser(data.googleId);
+          } else {
+            //TEMP SKIP LOGIN
+            authenticated = true;
+            currentUser = {db_id: 1, fb_id: 102904983383086, google_id: null, name: "Starmýri", email: null, rentBalance: "???", rent: null, disabled: 0}
+            socket.emit("checkLogin", {response: true});
+          }
+
+          Promise.join(dbPromise, authPromise, function(dbArgs, authArgs) {
+              if(data.googleIdToken) {
+                  googleAuthenticated = true;
+                  authenticated = true;
+              } else if(data.facebookAccessToken) {
+                  facebookAuthenticated = true;
+                  authenticated = true;
+                  if(tempGoogleProfile.googleId) {
+                    shouldLinkAccounts(tempGoogleProfile);
+                  }
+              }
+              populateBandsOnUsers([currentUser])
+              .then(function(user){
+                socket.emit("checkLogin", {response: true, user: currentUser});
+              });
+          }).catch((error) => {
+            console.log("ERROR");
+            console.log(error);
+            if(data.googleIdToken) {
+                googleAuthenticated = false;
+                if(error == NO_USER) {
+                  if(authenticated === true) {
+                    shouldLinkAccounts(data);
+                  } else {
+                    tempGoogleProfile = data;
+                  }
                 }
-            } else {
-                socket.emit("checkLogin", {response: false, id: data.id});
-                console.log("EMAIL");
+            } else if(data.facebookAccessToken) {
+                facebookAuthenticated = false;
+            }
+            if(googleAuthenticated === false || facebookAuthenticated === false) {
+                socket.emit("checkLogin", {response: false, profile: data});
                 var mailOptions = {
                     from: 'limur@starmyri.tk',
                     to: 'andrithorhalls@gmail.com',
                     subject: data.name + ' hafnað á starmyri.tk',
-                    text: data.name + ' var að reyna að logga sig inn á starmyri.tk en var hafnað.'
+                    text: data.name + ' var að reyna að logga sig inn á starmyri.tk en var hafnað. Facebook: ' + data.fbId + ' Google: ' + data.googleId
                 };
                 transport.sendMail(mailOptions, function(err) {
                     console.log('Email sent!');
                     if(err)
                         console.log(err);
                 });
-                socket.disconnect(true);
+                //socket.disconnect(true);
+              }
+          });
+        }
+    });
+
+    socket.on('linkAccounts', linkAccounts);
+
+    function linkAccounts(data) {
+        if(currentUser.db_id == data.userId) {
+            sendSocketQuery('UPDATE ' + tbl_users + ' SET google_id=?, email=? WHERE db_id = ?', [data.googleId, data.email, data.userId])
+            .then(function(rows) {
+                socket.emit('accountsLinked', {user: rows[0]});
+            });
+        }
+    }
+
+    function shouldLinkAccounts(data) {
+        if(currentUser.name == data.name){
+            //Names are the same, linking accounts
+            linkAccounts({googleId: data.googleId, userId: currentUser.db_id, email: data.email})
+        } else {
+          socket.emit("shouldLinkAccounts", {googleId: data.googleId, fbId: currentUser.fb_id, userId: currentUser.db_id, email: data.email});
+        }
+    }
+
+    function checkFacebookUser(id) {
+        return sendQuery('SELECT * FROM ' + tbl_users + ' WHERE fb_id=? AND disabled=0', id, true)
+        .then(afterLoginPromise);
+    }
+
+    function checkGoogleUser(id) {
+        return sendQuery('SELECT * FROM ' + tbl_users + ' WHERE google_id=? AND disabled=0', id, true)
+        .then(afterLoginPromise);
+    }
+
+    function afterLoginPromise(rows) {
+        return new Promise(function(resolve, reject) {
+            if(rows.length != 0){
+                //Emit login response and rent data
+                if(rows[0].rentBalance === null){
+                  //TODO: test this
+                    if(rows[0].bands && rows[0].bands[0].id) {
+                        resolve(rows[0].db_id, rows[0].bands[0].rentBalance, rows[0].bands[0].bandName);/*socket.emit("checkLogin", {response: true, id: rows[0].id, balance: bandRows[0].rentBalance, band: bandRows[0].bandName}));*/
+                    } else {
+                        //Tilraun gaman?
+                        resolve(rows[0].db_id, rows[0].rentBalance, rows[0].name);
+                    }
+                } else{
+                    //individual
+                    resolve({id: rows[0].db_id, balance: rows[0].rentBalance, name: rows[0].name});
+                }
+                if(!currentUser.db_id) {
+                  currentUser = rows[0];
+                  socket.handshake.session.currentUser = currentUser;
+                  socket.handshake.session.save();
+                }
+            } else {
+                reject(NO_USER);
             }
         });
-    });
+    }
+
+    function getBand(id, bands) {
+      var returnBand;
+      bands.forEach(function(band){
+        if(band.id == id){
+            returnBand = band;
+          }
+      });
+      return returnBand;
+    }
+
+    function getUser(id, users) {
+      var returnUser = {};
+      users.forEach(function(user){
+        if(user.db_id == id){
+            returnUser.name = user.name;
+            returnUser.email = user.email;
+            returnUser.db_id = user.db_id;
+          }
+      });
+      return returnUser;
+    }
+
+    function populateBandsOnUsers(users){
+      return new Promise(function(resolve, reject) {
+          sendSocketQuery('SELECT * FROM ' + tbl_bands + ' WHERE disabled=0')
+          .then(function(bands){
+            var promises = [];
+            users.forEach(function(user){
+              var usersToBandsPromise = sendSocketQuery('SELECT * FROM ' + tbl_users_to_bands + ' WHERE user_id = ?', user.db_id)
+              .then(function(results) {
+                  var userBands = [];
+                  if(results) {
+                    results.forEach(function(user_to_band){
+                      userBands.push(getBand(user_to_band.band_id, bands));
+                    });
+                  }
+                  user.bands = userBands;
+              });
+              promises.push(usersToBandsPromise);
+            });
+            Promise.all(promises).then(function() {
+                resolve(users);
+            });
+          });
+      });
+    }
+
+    function populateMembersOnBands(bands){
+      return new Promise(function(resolve, reject) {
+        if(!bands || bands.length == 0){
+          resolve(bands);
+        }
+        sendSocketQuery('SELECT * FROM ' + tbl_users)
+        .then(function(users){
+            var promises = [];
+              bands.forEach(function(band){
+                band.members = [];
+                var usersToBandsPromise = sendSocketQuery('SELECT * FROM ' + tbl_users_to_bands + ' WHERE band_id = ?', band.id)
+                .then(function(results) {
+                    var bandMembers = [];
+                    results.forEach(function(user_to_band){
+                      bandMembers.push(getUser(user_to_band.user_id, users));
+                    });
+                    band.members = bandMembers;
+                });
+                promises.push(usersToBandsPromise);
+              });
+            Promise.all(promises).then(function() {
+                resolve(bands);
+            });
+        });
+      });
+    }
+
+    function isAuthenticated() {
+        return facebookAuthenticated || googleAuthenticated;
+    }
     socket.on('getUsernames', function(data) {
         //Emit user data
-        var usersPromise = sendSocketQuery('SELECT name FROM ' + tbl_users + ' WHERE disabled=0');
-        var bandsPromise = sendSocketQuery('SELECT bandName FROM ' + tbl_bands + ' WHERE disabled=0');
+        var usersPromise = sendSocketQuery('SELECT name, email FROM ' + tbl_users + ' WHERE disabled=0');
+        var bandsPromise = sendSocketQuery('SELECT * FROM ' + tbl_bands + ' WHERE disabled=0')
+        .then(bands => populateMembersOnBands(bands));
         Promise.join(usersPromise, bandsPromise, function(users, bands) {
             socket.emit('usernames', {users: users, bands: bands});
         });
     });
     socket.on('updateGroup', function (data) {
-        generateGroupAccess(data.accessToken)
-        .then(accessToken => updateGroupMembers(accessToken));
+        //facebookMgr.generateAppAccess(data.accessToken)
+        //.then(accessToken => facebookMgr.getGroupMembers(accessToken))
+        //.then(function(ids, names) {
+        //  sendQuery('UPDATE ' + tbl_users + ' SET disabled=1 WHERE auto_disable_enable = 1 AND fb_id NOT IN (' + ids.join() + ')', null, true);
+        //  if(ids.length > 1){
+        //      for (var i = 0; i < ids.length; i++) {
+        //          sendQuery('INSERT INTO ' + tbl_users + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE disabled = IF(auto_disable_enable = 1, 0, VALUES(disabled))', [null, ids[i], null, names[i], null, null, null, null, null, null, null, 0, 1], true);
+        //      };
+        //  }
+        //});
     });
     socket.on('getUsers', function (data){
-        sendSocketQuery('SELECT b1.bandName AS band1, b2.bandName AS band2, b3.bandName AS band3, b4.bandName AS band4, t.db_id, t.name, t.rentBalance, t.rent FROM ' + tbl_users + " AS t LEFT JOIN " + tbl_bands + " AS b1 ON b1.id = t.band1 LEFT JOIN " + tbl_bands + " AS b2 ON b2.id = t.band2 LEFT JOIN " + tbl_bands + " AS b3 ON b3.id = t.band3 LEFT JOIN " + tbl_bands + " AS b4 ON b4.id = t.band4")
-        .then(users => socket.emit('users', {users: users}));
+      var usersPromise = sendSocketQuery('SELECT * FROM ' + tbl_users)
+      .then(users => populateBandsOnUsers(users))
+      .then(users => socket.emit('users', {users: users}));
     });
     socket.on('getBands', function (data){
         sendSocketQuery('SELECT * FROM ' + tbl_bands)
@@ -305,6 +564,7 @@ calIO.sockets.on('connection', function (socket) {
         .then(events => socket.emit('nonRenterEvents', {events: events}));
     });
     socket.on('getTransactions', function (data){
+        //TODO: change paymentFrom to description
         sendSocketQuery('SELECT v.name AS verifiedBy, a.name AS assignedTo, t.date, t.amount, t.paymentFrom, t.db_id FROM ' + tbl_transactions + ' AS t LEFT JOIN ' + tbl_users + ' AS v ON v.db_id = t.verifiedBy LEFT JOIN ' + tbl_users + ' AS a ON a.db_id = t.assignedTo WHERE t.date < ? OR t.verifiedBy IS NULL ORDER BY t.date DESC', moment()-5000)
         .then(transactions => socket.emit('transactions', {transactions: transactions}));
     });
@@ -313,24 +573,15 @@ calIO.sockets.on('connection', function (socket) {
         sendSocketQuery('UPDATE ' + tbl_users + ' SET rentBalance = rentBalance + ? WHERE db_id = ?', [data.amount, data.assignedTo]);
     });
     socket.on('newTransaction', function (data) {
-        console.log("NEW TRANSACTION");
-        console.log(data);
         //TODO: insert object
-        sendSocketQuery('INSERT INTO ' + tbl_transactions + ' VALUES (?, ?, ?, ?, ?, ?, ?)', [null, null, data.paymentTo, data.paymentFromName, data.amount, data.paymentFrom, moment().unix()]);
+        sendSocketQuery('INSERT INTO ' + tbl_transactions + ' VALUES (?, ?, ?, ?, ?, ?, ?)', [null, null, data.paymentTo, data.paymentFromName, data.amount, data.verifiedBy, moment().unix()]);
         sendSocketQuery('UPDATE ' + tbl_users + ' SET rentBalance = rentBalance - ? WHERE db_id = ?', [data.amount, data.paymentFrom]);
         sendSocketQuery('UPDATE ' + tbl_users + ' SET rentBalance = rentBalance + ? WHERE db_id = ?', [data.amount, data.paymentTo]);
     });
 });
-console.log("Calendar listening on port " + calendarPort);
-var mysql = require('mysql');
-var pool = mysql.createPool({
-    connectionLimit : 3000,
-    host     : 'localhost',
-    user     : 'calendar_user',
-    password : 'Besta!Calendar1',
-    database : 'Starmyri'
+http.listen(calendarPort, function(){
+  console.log("Listening on port " + calendarPort);
 });
-process.setMaxListeners(0);
 
 var transport = nodemailer.createTransport(smtpTransport({
     host: "smtp.gmail.com",
@@ -345,89 +596,36 @@ var transport = nodemailer.createTransport(smtpTransport({
     }
 }));
 
-function postToFB(accessToken, calEvent){
-    var fbMessage = "Hæ krakkar! \n";
-    calEvent.start = new Date(calEvent.start*1000);
-    calEvent.end = new Date(calEvent.end*1000);
-    fbMessage += calEvent.title + " ætla að æfa á "  + calEvent.start.toDateString().substring(0, calEvent.start.toDateString().length - 5) + " frá " + calEvent.start.getHours() + ":" + (calEvent.start.getMinutes()<10?'0':'') + calEvent.start.getMinutes() + " til " + calEvent.end.getHours() + ":" + (calEvent.end.getMinutes()<10?'0':'') + calEvent.end.getMinutes();
-    if(calEvent.room == "L")
-        fbMessage += " í vinstra rýminu";
-    else if(calEvent.room == "R")
-        fbMessage += " í hægra rýminu";
-    else if(calEvent.room == "B")
-        fbMessage += " í báðum rýmunum";
-    fbMessage += ".";
-    FB.setAccessToken(accessToken);
-    FB.api(starmyriID + '/feed', 'post', { message: fbMessage }, function (res) {
-        if(!res || res.error) {
-            console.log(!res ? 'error occurred' : res.error);
-            return;
-        }
-    });
-}
-
-function updateGroupMembers(accessToken){
-    FB.setAccessToken(accessToken);
-    FB.api("/"+starmyriID+"/members?limit=50", function (response) {
-        if (response && !response.error){
-            var ids = [];
-            var names = [];
-            for(var i = 0; i<response.data.length; i++){
-                ids[i] = response.data[i].id;
-                names[i] = response.data[i].name;
-            }
-            sendQuery('UPDATE ' + tbl_users + ' SET disabled=1 WHERE auto_disable_enable = 1 AND fb_id NOT IN (' + ids.join() + ')', null, true);
-            if(ids.length > 1){
-                for (var i = 0; i < ids.length; i++) {
-                    sendQuery('INSERT INTO ' + tbl_users + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE disabled = IF(auto_disable_enable = 1, 0, VALUES(disabled))', [null, ids[i], names[i], null, null, null, null, null, null, 0, 1], true);
-                };
-            }
-        }
-    });
-}
-
-
-function cmd_exec(cmd, args, cb_stdout, cb_end, env) {
-  var spawn = require('child_process').spawn,
-    child = spawn(cmd, args, {env: env}),
-    me = this;
-  me.exit = 0;  // Send a cb to set 1 when cmd exits
-  child.stdout.on('data', function (data) { cb_stdout(me, data) });
-  child.stdout.on('end', function () { cb_end(me) });
-}
-
 function getCurrentTime(){
     var today = new Date();
     var year = today.getFullYear();
     var month = today.getMonth()+1;
     var day = today.getDate();
-    //var hour = today.getHours();
-    //var minutes = today.getMinutes();
-    //var seconds = today.getSeconds();
-    return year + "-" + month + "-" + day;// + " " + hour + ":" + minutes + ":" + seconds;
+    return year + "-" + (month < 10 ? "0" : "") + month + "-" + day;
 }
 
-function updateUserRentBalance(rows, db_id, amount) {
+function updateUserRentBalance(db_id, amount) {
     sendQuery("UPDATE " + tbl_users + " SET rentBalance = rentBalance + ? WHERE db_id = ?", [amount, db_id], true);
 }
 
-function createTransaction(rows, name, id, amount, date){
+function createTransaction(user, name, transactionId, amount, date){
     var insertQuery = "INSERT INTO " + tbl_transactions + " VALUES (?, ?, ?, ?, ?, ?, ?)";
-    if(rows[0]) {
-        sendQuery(insertQuery, [null, id, rows[0].db_id, name, amount, 1, moment(date).unix()], true)
-        .then(result => updateUserRentBalance(rows, rows[0].db_id, amount));
+    if(user) {
+        sendQuery(insertQuery, [null, transactionId, user.db_id, name, amount, 1, moment(date).unix()], true)
+        .then(result => updateUserRentBalance(user.db_id, amount));
     } else if(amount < 0) {
-        sendQuery(insertQuery, [null, id, null, name, amount, 1, moment(date).unix()], true)
-        .then(result => updateUserRentBalance(rows, rows[0].db_id, amount));
+        console.log("createTransaction for unregistered user")
+        //TODO: create transaction to unregistered user
+        //sendQuery(insertQuery, [null, id, null, name, amount, 1, moment(date).unix()], true)
+        //.then(result => updateUserRentBalance(rows, rows[0].db_id, amount));
     } else {
-        sendQuery(insertQuery, [null, id, null, name, amount, null, moment(date).unix()], true);
+        sendQuery(insertQuery, [null, transactionId, null, name, amount, null, moment(date).unix()], true);
     }
 }
 
-function parseTransactions(meniga, currentTime){
+function parseTransactions(allTransactions, currentTime){
     console.log("Parsing");
-    if(meniga.stdout != null){
-        var allTransactions = JSON.parse(meniga.stdout.substring(9));
+    if(allTransactions != null){
         for (var i = 0; i < allTransactions.length; i++) {
             if(allTransactions[i].AccountId == 295036){
                 var nameIndex = 0;
@@ -436,10 +634,10 @@ function parseTransactions(meniga, currentTime){
                 }
                 let name = allTransactions[i].Text.substring(nameIndex);
                 let amount = allTransactions[i].Amount;
-                let id = allTransactions[i].Id;
+                let transactionId = allTransactions[i].Id;
                 let date = allTransactions[i].Date;
                 sendQuery("SELECT db_id FROM " + tbl_users + " WHERE name = ?", name, true)
-                .then(rows => createTransaction(rows, name, id, amount, date));
+                .then(users => createTransaction(users[0], name, transactionId, amount, date));
             }
         };
     }
@@ -448,25 +646,70 @@ function parseTransactions(meniga, currentTime){
 }
 
 function getAndProcessTransactions(rows, currentTime){
-    console.log("Getting transactions");
-    var lastUpdateMoment = moment(rows[0].date, "YYYY-M-D");
-    var subtracted = lastUpdateMoment.subtract(2, 'days').format('YYYY-MM-DD');
-    var spawn = require('child_process').spawn;
-    var env = {MENIGA_USERNAME: "andrithorhalls@gmail.com", MENIGA_PASSWORD: "Superman12", startTime: subtracted, endTime: currentTime};
-    var meniga = new cmd_exec('/usr/bin/node', ['/var/www/meniga-client/examples/transactions.js'],
-        function (me, data) {me.stdout += data.toString();},
-        function (me) {me.exit = 1;parseTransactions(meniga, currentTime)},
-        env
-    );
-}
+  var lastUpdateMoment = moment(rows[0].date, "YYYY-M-D");
+  var subtracted = lastUpdateMoment.subtract(2, 'days').format('YYYY-MM-DD');
+  let username = "andrithorhalls@gmail.com";
+  let password = "Superman12";
+  let startTime = subtracted;
+  let endTime = getCurrentTime();
+  co(function* () {
+    try {
+      let menigaClient = new MenigaClient();
+      let authed = yield menigaClient.auth(username, password);
+      let categories = yield menigaClient.getUserCategories();
+      let categoriesByIndex = _.keyBy(categories, 'Id');
+      let page = 0;
+      let transactions;
+      let allTransactions = [];
+      do {
+        transactions = yield menigaClient.getTransactionsPage({
+          filter: {
+            PeriodFrom: moment(startTime).subtract(60, 'days'),
+            PeriodTo: moment(endTime).add(1, 'days'),
+          },
+          page: page
+        });
+        _.forEach(transactions.Transactions, function (transaction) {
+          if (_.has(categoriesByIndex, transaction.CategoryId)) {
+            transaction.Category = categoriesByIndex[transaction.CategoryId];
+          }
+          allTransactions.push(transaction);
+        });
+        page++;
+      } while (transactions.HasMorePages);
+        return yield Promise.resolve(allTransactions);
+    } catch (err) {
+      console.error('got err:', err);
+    }
+  })
+  .then(transactions => parseTransactions(transactions, currentTime));
+};
+
+
+
 //run once every hour
 var getTransactions = schedule.scheduleJob('0 */6 * * *', function(){
     var currentTime = getCurrentTime();
     sendQuery("SELECT * FROM Meniga", currentTime, true)
     .then(rows => getAndProcessTransactions(rows, currentTime));
 });
-//run once every month
+//run at midnight the first day of every month
 var j = schedule.scheduleJob('0 0 1 * *', function(){
-    sendQuery("UPDATE " + tbl_bands + " SET rentBalance=rentBalance - rent", null, true);
-    sendQuery("UPDATE " + tbl_users + " SET rentBalance=rentBalance - rent", null, true);
+    sendQuery("SELECT id, bandName, rentBalance FROM " + tbl_bands, null, true)
+    .then(function(allBands) {
+      allBands.forEach(function(band) {
+        if(band.rent){
+          createTransaction(null, band.bandName, null, -band.rent, new Date());
+          sendQuery("UPDATE " + tbl_bands + " SET rentBalance=rentBalance - rent WHERE id = ?", [band.id], true);
+        }
+      });
+    });
+    sendQuery("SELECT db_id, name, rent FROM " + tbl_users, null, true)
+    .then(function(allUsers) {
+      allUsers.forEach(function(user) {
+        if(user.rent){
+          createTransaction(user, user.name, null, -user.rent, new Date());
+        }
+      });
+    });
 });
