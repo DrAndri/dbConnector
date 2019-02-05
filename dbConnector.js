@@ -1,7 +1,9 @@
 "use strict";
 require('events').EventEmitter.prototype._maxListeners = 100;
+var path = require('path');
 var express = require("express");
 var app = express();
+var bodyparser = require('body-parser');
 var mysql = require('mysql');
 var http = require('http').createServer(app);
 var io = require('socket.io')(http);
@@ -18,7 +20,9 @@ var co = require('co');
 var _ = require('lodash');
 var MenigaClient = require('./meniga-client/index');
 var googleMgr = require("./googleMgr");
-var facebookMgr = require("./facebookMgr");
+var passport = require('passport');
+var LocalStrategy = require('passport-local').Strategy;
+var GoogleStrategy = require('passport-google-oauth').OAuth2Strategy;
 
 var tbl_events = "Events";
 var tbl_users = "Users";
@@ -30,11 +34,11 @@ var tbl_event_to_account = "event_to_account";
 var tbl_recurring_events = "Recurring_events"
 var tbl_users_to_bands = "user_to_band";
 var not_authorized = "not_authorized";
-var calendarPort = 3333;
+var calendarPort = 3334;
 var epochDay = 24*60*60*1000;
 var mysqlUser = 'calendar_user'
 var mysqlPass = 'Besta!Calendar1'
-var mysqlDatabase = 'Starmyri'
+var mysqlDatabase = 'Starmyri_TEST'
 var cookieSecret = 'gottLeyndarmal';
 
 var NO_USER = 0;
@@ -51,6 +55,64 @@ var pool = mysql.createPool({
 
 app.set('trust proxy', 1);
 
+passport.use(new LocalStrategy(
+  { usernameField: 'email' },
+  (email, password, done) => {
+    findUserByEmail(email)
+    .then(function(users){
+      if(users.length > 0){
+        var user = users[0];
+        if(email === user.email && password === user.password) {
+          return done(null, user)
+        }
+      }
+    });
+  }
+));
+
+// Use the GoogleStrategy within Passport.
+//   Strategies in Passport require a `verify` function, which accept
+//   credentials (in this case, an accessToken, refreshToken, and Google
+//   profile), and invoke a callback with a user object.
+passport.use(new GoogleStrategy({
+    clientID: "585554813290-1plmpaq95nfmqsjpded8j02d5cbau3ht.apps.googleusercontent.com",
+    clientSecret: "9z7FHG7zISsIEGHvmBn7bHg2",
+    callbackURL: "https://starmyri.ga/auth/google/callback"
+  },
+  function(accessToken, refreshToken, profile, done) {
+    if(profile && profile.emails.length > 0)
+    findUserByEmail(profile.emails[0].value)
+    .then(function(users){
+      if(users.length > 0){
+        return done(null, users[0]);
+      }
+    })
+  }
+));
+
+// used to serialize the user for the session
+passport.serializeUser(function(user, done) {
+  done(null, user.db_id);
+});
+
+// used to deserialize the user
+passport.deserializeUser(function(id, done) {
+    findUserById(id)
+    .then(function(users) {
+      if(users.length > 0){
+        done(null, users[0]);
+      }
+    })
+});
+
+function findUserById(id) {
+  return sendQuery("SELECT * FROM " + tbl_users + " WHERE db_id = ? AND disabled = 0", id, true);
+}
+
+function findUserByEmail(email) {
+  return sendQuery("SELECT * FROM " + tbl_users + " WHERE email = ? AND disabled = 0", email, true);
+}
+
 var sessionStore = new MySQLStore({createDatabaseTable: true}/* session store options */, pool);
 
 var sessionInstance = session({
@@ -60,22 +122,67 @@ var sessionInstance = session({
 		saveUninitialized: true,
     store: sessionStore,
     cookie: {
-      maxAge: 3600000 * 24 * 30 * 2
+      maxAge: 365 * 24 * 60 * 60 * 1000
     }
 	});
 
 app.use(sessionInstance);
-
-
+app.use(bodyparser.urlencoded({ extended: true }));
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(cookieParser(cookieSecret));
 
-app.use("/", express.static(__dirname + '/html'));
+
+// GET /auth/google
+//   Use passport.authenticate() as route middleware to authenticate the
+//   request.  The first step in Google authentication will involve
+//   redirecting the user to google.com.  After authorization, Google
+//   will redirect the user back to this application at /auth/google/callback
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+  // GET /auth/google/callback
+//   Use passport.authenticate() as route middleware to authenticate the
+//   request.  If authentication fails, the user will be redirected back to the
+//   login page.  Otherwise, the primary route function function will be called,
+//   which, in this example, will redirect the user to the home page.
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    res.redirect('/');
+  });
+
+// create the login get and post routes
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname+'/login.html'))
+});
+
+app.post('/login', (req, res, next) => {
+  if(req.body.local) {
+    passport.authenticate('local', (err, user, info) => {
+      req.login(user, (err) => {
+        return res.redirect('/');
+      })
+    })(req, res, next);
+  } else {
+    return res.send('fokk off');
+  }
+})
+
+function ensureLoggedIn(req, res, next) {
+    if (req.isAuthenticated()) {
+        return next();
+    }
+    res.redirect("/login");
+}
+
+app.use("/", ensureLoggedIn, express.static(__dirname + '/html'));
 
 googleMgr.init();
 
 let sendQuery = function (query, args, authorized){
   //TODO: temp skip login
-    if(true/*authorized*/) {
+    if(authorized) {
         return new Promise(
             function(resolve, reject) {
               pool.getConnection(function(err,connection){
@@ -120,14 +227,30 @@ io.on('connection', function(socket){
     var googleAuthenticated;
     var authenticated;
     var currentUser = {};
-    var tempGoogleProfile = {};
 
-    if(socket.handshake.session && socket.handshake.session.currentUser) {
-        currentUser = socket.handshake.session.currentUser;
+    if(socket.handshake.session.passport && socket.handshake.session.passport.user) {
         authenticated = true;
-        console.log("Sess");
-        socket.emit("checkLogin", {response: true, user: currentUser});
-      }
+        var authPromise = findUserById(socket.handshake.session.passport.user)
+        .then(users => populateBandsOnUsers(users))
+        .then(function(users) {
+          if(users.length > 0) {
+            currentUser = users[0];
+            delete currentUser.password;
+            return currentUser;
+          } else {
+            authenticated = false;
+            return false;
+          }
+        });
+
+        //Emit user data
+        var usersPromise = sendSocketQuery('SELECT name, email FROM ' + tbl_users + ' WHERE disabled=0');
+        var bandsPromise = sendSocketQuery('SELECT * FROM ' + tbl_bands + ' WHERE disabled=0')
+        .then(bands => populateMembersOnBands(bands));
+        Promise.join(authPromise, usersPromise, bandsPromise, function(currentUser, users, bands) {
+            socket.emit('userData', {response: true, user: currentUser, users: users, bands: bands});
+        });
+    }
     function sendSocketQuery(sql, args) {
         return sendQuery(sql, args, authenticated)
         .catch(function(reason){
@@ -234,6 +357,13 @@ io.on('connection', function(socket){
         });
         sendSocketQuery('INSERT INTO ' + tbl_events + ' (start, end, title, body, creator, room, series) VALUES ?', [eventRows])
         .then(function(rows) {
+          console.log(rows);
+            var offset = 0;
+            events.forEach(function(event){
+              event.id = rows.insertId + offset;
+              offset++;
+            });
+            console.log(events);
             if(broadcast) {
                 broadcastEvent("events", events);
             } else {
@@ -273,7 +403,6 @@ io.on('connection', function(socket){
     }
 
     socket.on('getAllEventsWithinTime', function (data) {
-      console.log("FETCHING EVENTS");
         sendSocketQuery('SELECT * FROM ' + tbl_events + ' WHERE (start > ? AND start < ?) OR (start < ? AND end > ?) OR (end > ? AND end < ?)', [data.start, data.end, data.start, data.end, data.start, data.end])
         .then(function(events) {
             socket.emit("events", {events: events})
@@ -307,119 +436,12 @@ io.on('connection', function(socket){
     });
     socket.on('signOut', function (data) {
       authenticated = false;
-      if (socket.handshake.session.currentUser) {
-          delete socket.handshake.session.currentUser;
+      if (socket.handshake.session.passport) {
+          delete socket.handshake.session.passport;
           socket.handshake.session.save();
       }
     });
-    socket.on('checkLogin', function (data) {
-      console.log("CHECK");
-      console.log(data);
-      if(authenticated && currentUser) {
-        console.log("ALREADY AUTHENTICATED");
-        socket.emit("checkLogin", {response: true, user: currentUser});
-        return;
-      } else if(socket.handshake.session && socket.handshake.session.currentUser) {
-        console.log("SESSION");
-          currentUser = socket.handshake.session.currentUser;
-          authenticated = true;
-          socket.emit("checkLogin", {response: true, user: currentUser});
-      } else {
-        console.log("NO SESSH");
-          var authPromise;
-          var dbPromise;
-          if(data.facebookAccessToken) {
-            authPromise = facebookMgr.generateAppAccess(data.facebookAccessToken)
-            .then(accessToken => facebookMgr.validateAccessToken(accessToken, data.fbId, data.facebookAccessToken));
-            dbPromise = checkFacebookUser(data.fbId);
-          } else if(data.googleIdToken) {
-            authPromise = googleMgr.validateAccessToken(data.googleIdToken, data.googleId);
-            dbPromise = checkGoogleUser(data.googleId);
-          } else {
-            //TEMP SKIP LOGIN
-            authenticated = true;
-            currentUser = {db_id: 1, fb_id: 102904983383086, google_id: null, name: "Starmýri", email: null, rentBalance: "???", rent: null, disabled: 0}
-            socket.emit("checkLogin", {response: true});
-          }
 
-          Promise.join(dbPromise, authPromise, function(dbArgs, authArgs) {
-              if(data.googleIdToken) {
-                  googleAuthenticated = true;
-                  authenticated = true;
-              } else if(data.facebookAccessToken) {
-                  facebookAuthenticated = true;
-                  authenticated = true;
-                  if(tempGoogleProfile.googleId) {
-                    shouldLinkAccounts(tempGoogleProfile);
-                  }
-              }
-              populateBandsOnUsers([currentUser])
-              .then(function(user){
-                socket.emit("checkLogin", {response: true, user: currentUser});
-              });
-          }).catch((error) => {
-            console.log("ERROR");
-            console.log(error);
-            if(data.googleIdToken) {
-                googleAuthenticated = false;
-                if(error == NO_USER) {
-                  if(authenticated === true) {
-                    shouldLinkAccounts(data);
-                  } else {
-                    tempGoogleProfile = data;
-                  }
-                }
-            } else if(data.facebookAccessToken) {
-                facebookAuthenticated = false;
-            }
-            if(googleAuthenticated === false || facebookAuthenticated === false) {
-                socket.emit("checkLogin", {response: false, profile: data});
-                var mailOptions = {
-                    from: 'limur@starmyri.tk',
-                    to: 'andrithorhalls@gmail.com',
-                    subject: data.name + ' hafnað á starmyri.tk',
-                    text: data.name + ' var að reyna að logga sig inn á starmyri.tk en var hafnað. Facebook: ' + data.fbId + ' Google: ' + data.googleId
-                };
-                transport.sendMail(mailOptions, function(err) {
-                    console.log('Email sent!');
-                    if(err)
-                        console.log(err);
-                });
-                //socket.disconnect(true);
-              }
-          });
-        }
-    });
-
-    socket.on('linkAccounts', linkAccounts);
-
-    function linkAccounts(data) {
-        if(currentUser.db_id == data.userId) {
-            sendSocketQuery('UPDATE ' + tbl_users + ' SET google_id=?, email=? WHERE db_id = ?', [data.googleId, data.email, data.userId])
-            .then(function(rows) {
-                socket.emit('accountsLinked', {user: rows[0]});
-            });
-        }
-    }
-
-    function shouldLinkAccounts(data) {
-        if(currentUser.name == data.name){
-            //Names are the same, linking accounts
-            linkAccounts({googleId: data.googleId, userId: currentUser.db_id, email: data.email})
-        } else {
-          socket.emit("shouldLinkAccounts", {googleId: data.googleId, fbId: currentUser.fb_id, userId: currentUser.db_id, email: data.email});
-        }
-    }
-
-    function checkFacebookUser(id) {
-        return sendQuery('SELECT * FROM ' + tbl_users + ' WHERE fb_id=? AND disabled=0', id, true)
-        .then(afterLoginPromise);
-    }
-
-    function checkGoogleUser(id) {
-        return sendQuery('SELECT * FROM ' + tbl_users + ' WHERE google_id=? AND disabled=0', id, true)
-        .then(afterLoginPromise);
-    }
 
     function afterLoginPromise(rows) {
         return new Promise(function(resolve, reject) {
@@ -521,19 +543,6 @@ io.on('connection', function(socket){
         });
       });
     }
-
-    function isAuthenticated() {
-        return facebookAuthenticated || googleAuthenticated;
-    }
-    socket.on('getUsernames', function(data) {
-        //Emit user data
-        var usersPromise = sendSocketQuery('SELECT name, email FROM ' + tbl_users + ' WHERE disabled=0');
-        var bandsPromise = sendSocketQuery('SELECT * FROM ' + tbl_bands + ' WHERE disabled=0')
-        .then(bands => populateMembersOnBands(bands));
-        Promise.join(usersPromise, bandsPromise, function(users, bands) {
-            socket.emit('usernames', {users: users, bands: bands});
-        });
-    });
     socket.on('updateGroup', function (data) {
         //facebookMgr.generateAppAccess(data.accessToken)
         //.then(accessToken => facebookMgr.getGroupMembers(accessToken))
@@ -547,6 +556,7 @@ io.on('connection', function(socket){
         //});
     });
     socket.on('getUsers', function (data){
+      //TODO: remove passwords...
       var usersPromise = sendSocketQuery('SELECT * FROM ' + tbl_users)
       .then(users => populateBandsOnUsers(users))
       .then(users => socket.emit('users', {users: users}));
@@ -601,7 +611,7 @@ function getCurrentTime(){
     var year = today.getFullYear();
     var month = today.getMonth()+1;
     var day = today.getDate();
-    return year + "-" + (month < 10 ? "0" : "") + month + "-" + day;
+    return year + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day;
 }
 
 function updateUserRentBalance(db_id, amount) {
