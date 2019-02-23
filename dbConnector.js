@@ -34,11 +34,11 @@ var tbl_event_to_account = "event_to_account";
 var tbl_recurring_events = "Recurring_events"
 var tbl_users_to_bands = "user_to_band";
 var not_authorized = "not_authorized";
-var calendarPort = 3334;
+var calendarPort = 3333;
 var epochDay = 24*60*60*1000;
 var mysqlUser = 'calendar_user'
 var mysqlPass = 'Besta!Calendar1'
-var mysqlDatabase = 'Starmyri_TEST'
+var mysqlDatabase = 'Starmyri'
 var cookieSecret = 'gottLeyndarmal';
 
 var NO_USER = 0;
@@ -46,7 +46,7 @@ var NO_USER = 0;
 process.setMaxListeners(0);
 
 var pool = mysql.createPool({
-    connectionLimit : 3000,
+    connectionLimit : 100,
     host     : 'localhost',
     user     : mysqlUser,
     password : mysqlPass,
@@ -75,18 +75,19 @@ passport.use(new LocalStrategy(
 //   credentials (in this case, an accessToken, refreshToken, and Google
 //   profile), and invoke a callback with a user object.
 passport.use(new GoogleStrategy({
-    clientID: "585554813290-1plmpaq95nfmqsjpded8j02d5cbau3ht.apps.googleusercontent.com",
-    clientSecret: "9z7FHG7zISsIEGHvmBn7bHg2",
+    clientID: "334030422344-7n8d2r6hnrkahdfv675edbtufgp83t1j.apps.googleusercontent.com",
+    clientSecret: "jEKn2HUioh95MPayUrJZLtqn",
     callbackURL: "https://starmyri.ga/auth/google/callback"
   },
   function(accessToken, refreshToken, profile, done) {
-    if(profile && profile.emails.length > 0)
-    findUserByEmail(profile.emails[0].value)
-    .then(function(users){
-      if(users.length > 0){
-        return done(null, users[0]);
-      }
-    })
+    if(profile && profile.emails.length > 0){
+      findUserByEmail(profile.emails[0].value)
+      .then(function(users){
+        if(users.length > 0){
+          return done(null, users[0]);
+        }
+      })
+    }
   }
 ));
 
@@ -139,7 +140,7 @@ app.use(cookieParser(cookieSecret));
 //   redirecting the user to google.com.  After authorization, Google
 //   will redirect the user back to this application at /auth/google/callback
 app.get('/auth/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] }));
+  passport.authenticate('google', { scope: ['email', 'openid']  }));
 
   // GET /auth/google/callback
 //   Use passport.authenticate() as route middleware to authenticate the
@@ -147,7 +148,7 @@ app.get('/auth/google',
 //   login page.  Otherwise, the primary route function function will be called,
 //   which, in this example, will redirect the user to the home page.
 app.get('/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login' }),
+  passport.authenticate('google', { failureRedirect: '/login', successRedirect: '/' }),
   function(req, res) {
     res.redirect('/');
   });
@@ -181,7 +182,6 @@ app.use("/", ensureLoggedIn, express.static(__dirname + '/html'));
 googleMgr.init();
 
 let sendQuery = function (query, args, authorized){
-  //TODO: temp skip login
     if(authorized) {
         return new Promise(
             function(resolve, reject) {
@@ -589,6 +589,14 @@ io.on('connection', function(socket){
         sendSocketQuery('UPDATE ' + tbl_users + ' SET rentBalance = rentBalance + ? WHERE db_id = ?', [data.amount, data.paymentTo]);
     });
 });
+
+// app.use(function handleDatabaseError(error, req, res, next) {
+//   if (error) {
+//     console.log(error);
+//   }
+//   next();
+// });
+
 http.listen(calendarPort, function(){
   console.log("Listening on port " + calendarPort);
 });
