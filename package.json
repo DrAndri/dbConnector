@@ -1,14 +1,15 @@
 {
   "name": "starmyri_calendar",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Calendar for STARMYRI",
   "main": "dbConnector.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodejs ./dbConnector.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DrAndri/weekCalendar.git"
+    "url": "git+https://github.com/DrAndri/dbConnector.git"
   },
   "keywords": [
     "calendar",
@@ -17,9 +18,9 @@
   "author": "Andri Þórhallsson",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/DrAndri/weekCalendar/issues"
+    "url": "https://github.com/DrAndri/dbConnector/issues"
   },
-  "homepage": "https://github.com/DrAndri/weekCalendar#readme",
+  "homepage": "https://github.com/DrAndri/dbConnector#readme",
   "dependencies": {
     "body-parser": "^1.18.3",
     "cookie-parser": "^1.4.3",
