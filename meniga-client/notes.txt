@@ -1,0 +1,5 @@
+Starmýri: 295036
+
+Námsmanna: 265234
+
+MENIGA_USERNAME="andrithorhalls@gmail.com" MENIGA_PASSWORD="Superman12" /usr/local/n/versions/node/5.6.0/bin/node /var/www/meniga-client/examples/transactions.js
