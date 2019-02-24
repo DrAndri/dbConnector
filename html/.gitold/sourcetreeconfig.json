@@ -1,0 +1,30 @@
+{
+  "$id": "1",
+  "AutoRefresh": true,
+  "AutoRefreshRemotes": true,
+  "CommitTextLinks": [],
+  "DraftCommitMsg": "",
+  "IncomingSavedCount": 2,
+  "LastCheckedRemotes": "2018-07-07T13:57:01.8127484+00:00",
+  "LastUsedView": 1,
+  "LogBranchFilterIndex": 0,
+  "OutgoingSavedCount": 0,
+  "RemoteProjectLinks": [
+    {
+      "$id": "2",
+      "BaseUrl": "https://www.github.com",
+      "Identifier": "DrAndri/Calendar",
+      "RemoteName": "origin",
+      "Type": 0,
+      "Username": "DrAndri",
+      "CloneUrl": null,
+      "DisplayName": "origin: https://www.github.com"
+    }
+  ],
+  "SidebarExpandedItems": [
+    "File Status",
+    "Branches"
+  ],
+  "SidebarWidth": 210.0,
+  "SubtreeLinks": []
+}

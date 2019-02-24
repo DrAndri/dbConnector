@@ -1,0 +1,469 @@
+body {
+	font-family: "Lucida Grande", Helvetica, Arial, Verdana, sans-serif;
+	font-size: 83.33%;
+	height: 100%;
+}
+
+h1 {
+	padding: 0.5em;
+	font-size: 1.6em;
+}
+
+h2 {
+	margin: 0.5em 0;
+	font-size: 1.4em;
+}
+
+button {
+	padding: .2em .6em .3em .6em;
+}
+
+.ui-widget {
+	font-size: 1em;
+}
+
+#event_edit_container {
+	display: none;
+}
+
+#title, #body {
+	border: 1px solid;
+	border-color: rgb(169, 169, 169);
+}
+
+.wc-header td {
+	background: #E6EEF1;
+}
+
+label {
+	display: block;
+	margin-top: 1em;
+	margin-bottom: 0em;
+}
+
+form ul {
+	padding: 0.3em;
+	padding-bottom: 0;
+}
+
+.ui-dialog .ui-dialog-buttonpane {
+	margin: 0;
+}
+
+.ui-dialog .ui-dialog-content {
+	padding-bottom: 0;
+}
+
+.checkLabel label {
+    display: block;
+    padding-left: 15px;
+    text-indent: -15px;
+}
+input[type='checkbox'] {
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    margin:0;
+    vertical-align: bottom;
+    position: relative;
+    top: -1px;
+    *overflow: hidden;
+}
+
+
+select, input[type='text'], textarea {
+	width: 100%;
+	padding: 3px;
+}
+
+input[type='text'], textarea {
+	width: 98%;
+}
+
+.datepicker-label, .datepicker-input, .timepicker-input {
+	width: 93% !important;
+	padding: 3px !important;
+}
+
+.datepicker-table {
+	width: 100%;
+}
+
+.ms-sel-ctn input[type='text'] {
+	max-width: 399px
+}
+
+ul.formatted,ol.formatted {
+	display: block;
+	margin: 1em 0.5em;
+}
+
+ul.formatted li,ol.formatted li {
+	margin: 5px 30px;
+	display: auto;
+}
+
+ul.formatted li {
+	list-style-type: disc;
+}
+
+ol.formatted li {
+	list-style-type: decimal;
+}
+
+.calFrame {
+	position: relative;
+}
+
+.input-color {
+	float: left;
+	position: relative;
+	width: 120px;
+	height: auto;
+}
+
+.input-color p {
+    padding-left: 20px;
+		margin: 4px;
+}
+
+.input-color .color-box {
+    width: 10px;
+    height: 10px;
+    display: inline-block;
+    background-color: #ccc;
+    position: absolute;
+    left: 5px;
+    top: 6px;
+}
+
+.calendar {
+	position: absolute;
+}
+.colorFrame {
+	width: 20em;
+	position: relative;
+}
+
+h1 {
+	float: left;
+	padding-right: 2em;
+}
+
+.titleHeader {
+	display: flex;
+	position: absolute;
+	top: 0;
+	margin-left: 70px;
+}
+
+#page-title {
+	bottom: 0;
+	right: 0;
+	position: absolute;
+    z-index: 5;
+	display: none;
+}
+
+.browserButtonContainer {
+	margin: auto;
+	display: flex;
+	padding: 0.3em;
+}
+
+.wc-next, .wc-prev, .wc-todayBtn, #owncloud, #signout-button {
+	top: -0.1em;
+	margin: 0;
+	margin-left: 1em;
+	border: none;
+	font-size: 18px;
+	cursor: pointer;
+}
+.button {
+	cursor: pointer;
+}
+
+.wc-title {
+	font-size: 3em !important;
+	line-height: 1em;
+}
+
+.wc-cal-event .wc-time {
+	font-size: 3em;
+    line-height: 1em;
+}
+
+.rentBalance {
+	width: auto;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	white-space: nowrap
+}
+
+.rentBalance p {
+		margin: 0.3em;
+}
+
+.fas {
+	color: black;
+	font-size: 30px;
+}
+
+.balanceAmountRed {
+	float: left;
+	color: red;
+}
+
+.balanceAmountGreen {
+	float: left;
+	color: green;
+}
+
+.rentBalance img {
+	float: left;
+}
+
+#errorMsg {
+	color: red;
+}
+
+#weekline-div {
+	margin-top: 1em;
+	width: 450px;
+	font-size: 29px;
+}
+
+.ui-dialog {
+	overflow: visible !important;
+}
+
+.ui-widget-header {
+	background: #0665a7;
+}
+.ui-corner-all {
+    -moz-border-radius: 2px;
+    -webkit-border-radius: 2px;
+}
+.ui-state-default, .ui-widget-content .ui-state-default {
+	border: 1px solid #069dff;
+    background: #0665a7;
+}
+.ui-state-default:hover, .ui-widget-content .ui-state-hover {
+	background: #0da3d0;
+	color: white;
+}
+.ui-state-hover .ui-icon{
+	background-image: url(http://ajax.googleapis.com/ajax/libs/jqueryui/1.7.2/themes/start/images/ui-icons_d8e7f3_256x240.png);
+}
+
+#datepickers-container{
+	z-index: 9999999999;
+}
+
+#switch-week-or-picker{
+	float: right;
+}
+
+#recurringOptions{
+	margin-top: .5em;
+}
+
+
+.round-button {
+	width: 50px;
+	position: absolute;
+	bottom: 0;
+	right: 0;
+	margin-right: 45px;
+	margin-bottom: 40px;
+	z-index: 3;
+}
+.round-button-circle {
+	width: 5em;
+    height: 5em;
+    border-radius: 50%;
+    overflow:hidden;
+
+    background: #0665a7;
+    box-shadow: 0 0 3px gray;
+}
+.round-button-circle:hover {
+	background:#0da3d0;
+}
+.round-button a {
+	position: relative;
+    display:block;
+	width:2.5em;
+    margin: 0;
+	line-height:1em;
+	bottom: -0.7em;
+
+	text-align:center;
+	color:#e2eaf3;
+    font-family:Verdana;
+    font-size:2em;
+    font-weight:bold;
+    text-decoration:none;
+}
+
+#side-menu {
+	position: fixed;
+	left: -16em;
+	width: 15em;
+	height: 100%;
+	z-index: 5;
+	background-color: white;
+	padding-top: 3em;
+	padding-left: 1em;
+}
+
+#daysToShow-input, #timeslotHeight-input, #calendar-datepicker{
+	width: 4em !important;
+}
+
+#whoAreYou {
+	display: none;
+}
+
+#creatorWrapper {
+	display: none;
+}
+
+@media (max-device-width:1024px)  {
+	input, .ui-widget select, .ui-widget textarea, .ui-widget button, label, .ms-res-item, .ms-sel-item, ui-dialog-title {
+		font-size: 2em !important;
+	}
+	input {
+		height: 2em;
+	}
+	.datepicker-input, .timepicker-input {
+		border-width: 2px;
+	    border-style: groove;
+	}
+
+	.wc-title, .wc-cal-event .wc-time {
+		font-size: 1.5em;
+	}
+
+	.wc-grid-timeslot-header {
+		width: 8%;
+	}
+
+	.round-button-circle{
+		height: 7em !important;
+		width: 7em !important;
+	}
+
+	.round-button {
+		padding-right: 5em !important;
+		padding-bottom: 5em !important;
+		margin-right: 40px !important;
+    	margin-bottom: 40px !important;
+	}
+
+	.round-button a {
+		font-size: 2.8em !important;
+	}
+
+	.ui-dialog {
+		width: 60em !important;
+		top: 10% !important;
+	}
+
+	#side-menu{
+		width: 300px;
+		left: -320px;
+		padding-top: 8em;
+	}
+
+	.ms-ctn .ms-trigger .ms-trigger-ico {
+		border-top: 25px solid #333;
+		border-right: 10px solid transparent;
+		border-left: 10px solid transparent;
+		float: right;
+		margin-left: 100px;
+		margin-right: 20px;
+	}
+
+	.ms-ctn .ms-trigger, .ms-ctn .ms-trigger:hover {
+		width: 200px;
+	}
+
+	.ms-sel-ctn {
+		height: 6em;
+	}
+
+	.ms-trigger {
+		max-height: 100% !important;
+		width: 150px;
+	}
+
+	.wc-nav {
+		padding-top: 2em;
+		height: 6em;
+	}
+
+	#signout-button {
+		padding-top: 0;
+	}
+
+	.titleHeader{
+		margin-left: 150px;
+		padding-top: 4em;
+	}
+
+	.fas {
+		font-size: 50px;
+	}
+
+	.rentBalance p br {
+		display: none;
+	}
+
+	.colorFrame {
+		position: absolute;
+		margin-top: -3em;
+		width: 30em;
+		padding-left: 0px;
+	}
+	.input-color {
+		font-size: 1.2em;
+		width: auto;
+	}
+	.colorFrame {
+		width: 700px;
+	}
+
+	.input-color .color-box {
+		width: 20px;
+		height: 20px;
+		top: -3px;
+	}
+
+	.input-color p {
+		margin-top: -2px;
+		padding-left: 28px;
+	}
+
+	.rentBalance p {
+		font-size: 1.5em;
+	}
+
+	.rentBalance {
+		margin-top: 5px;
+	}
+
+	.picker--time .picker__box{
+		font-size: 1.5em;
+	}
+
+	#weekline-div {
+		width: 100%;
+		font-size: 4em;
+	}
+
+	#ui-dialog-title-event_edit_container{
+		font-size: 2em;
+	}
+}

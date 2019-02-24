@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dagatal Starmýrar</title>
+<link rel="icon" type="image/png" href="images/favicon-32x32.png" sizes="32x32" />
+<link rel="icon" type="image/png" href="images/favicon-16x16.png" sizes="16x16" />
+<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.3.2/jquery.min.js'></script>
+<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jqueryui/1.7.2/jquery-ui.min.js'></script>
+<script type='text/javascript' src='jquery.weekcalendar_01.09.18.min.js'></script>
+<script type="text/javascript" src="libs/jquery-1.8.0.min.js"></script>
+<script type='text/javascript' src='libs/jquery-1.11.4.ui.min.js'></script>
+<script type="text/javascript" src="socket.io/socket.io.js"></script>
+<script type='text/javascript' src='pickadate/picker.min.js'></script>
+<script type='text/javascript' src='pickadate/picker.date.min.js'></script>
+<script type='text/javascript' src='pickadate/picker.time.min.js'></script>
+<script type='text/javascript' src="bower_components/air-datepicker/dist/js/datepicker.min.js"></script>
+<script type='text/javascript' src="bower_components/air-datepicker/dist/js/i18n/datepicker.en.js"></script>
+<script type='text/javascript' src="magicSuggest/magicsuggest-min.js"></script>
+<script type='text/javascript' src='jquery.weekLine.min.js'></script>
+<script type="text/javascript">$j = $.noConflict(true);</script>
+<script type='text/javascript' src='calendar_05.02.19.min.js'></script>
+<link rel='stylesheet' type='text/css' href='https://ajax.googleapis.com/ajax/libs/jqueryui/1.7.2/themes/start/jquery-ui.css' />
+<link rel='stylesheet' type='text/css' href='jquery.weekcalendar_01.09.18.min.css' />
+<link rel="stylesheet" type='text/css' href="pickadate/themes/default_07.07.2017.min.css">
+<link rel="stylesheet" type='text/css' href="pickadate/themes/default.date.min.css">
+<link rel="stylesheet" type='text/css' href="pickadate/themes/default.time.min.css">
+<link rel="stylesheet" type='text/css' href="bower_components/air-datepicker/dist/css/datepicker.min.css">
+<link rel="stylesheet" type='text/css' href="magicSuggest/magicsuggest-min.css">
+<link rel="stylesheet" type='text/css' href="jquery.weekLine.min.css">
+<link rel="stylesheet" type='text/css' href="jquery.weekLine-white.min.css">
+<link rel='stylesheet' type='text/css' href='reset.min.css' />
+<link rel='stylesheet' type='text/css' href='calendar_05.02.19.min.css' />
+<link rel='stylesheet' type='text/css' href='burger-menu.min.css' />
+<link rel="stylesheet" type='text/css' href="https://use.fontawesome.com/releases/v5.3.1/css/all.css" integrity="sha384-mzrmE5qonljUremFsqc01SB46JvROS7bZs3IO2EmfFsd15uHvIt+Y8vEf7N7fWAU" crossorigin="anonymous">
+
+<meta charset="UTF-8">
+<script async="" src="https://www.google-analytics.com/analytics.js"></script>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-103808486-1', {siteSpeedSampleRate: 100});
+  ga('send', 'pageview');
+
+</script>
+</head>
+<body>
+<div class="afterLogin">
+    <h1 id="page-title">www.starmyri.ga</h1>
+    <div id="burger-menu"><span></span><span></span><span></span></div>
+    <div id="side-menu">
+        <label>Days to show: </label>
+        <input id="daysToShow-input" type="number" min="1" onchange="setDaysToShow();">
+        <label>Height of time slots: </label>
+        <input id="timeslotHeight-input" type="number" min="1" onchange="setTimeslotHeight();">
+        <label>Go to date: </label>
+        <input class="datepicker-input" id="calendar-datepicker" name="date" type="text" size="20" autofocus="false">
+    </div>
+  <div class="calFrame">
+      <div class="titleHeader">
+        <div class="colorFrame">
+            <div class="input-color">
+              <p>Left Room</p>
+              <div class="color-box" style="background-color: #B65700;"></div>
+            </div>
+            <div class="input-color">
+              <p>Right Room</p>
+              <div class="color-box" style="background-color: #009200;"></div>
+            </div>
+            <div class="input-color">
+              <p>Both Rooms</p>
+              <div class="color-box" style="background-color: #B60000;"></div>
+            </div>
+        </div>
+        <div class="browserButtonContainer">
+            <div class="rentBalance"></div>
+            <a title='Sign out' id="signout-button" onclick="signOut();"><i class="fas fa-sign-out-alt"></i></a>
+        </div>
+      </div>
+      <div id='calendar'></div>
+      <div class="round-button"><div class="round-button-circle"><a onclick="$calendar.weekCalendar('createNewEvent');" class="round-button">+</a></div></div>
+  </div>
+  <div id="event_edit_container">
+    <form>
+        <!-- grab focus so no input fields pop up -->
+        <input type="text" style="position: fixed; left: -10000000px;"/>
+      <ul>
+        <li>
+            <table class="datepicker-table">
+                <tr>
+                  <th><label class="datepicker-label" id="start-label" for="start-datepicker">Start: </label></th>
+                  <th><label class="datepicker-label" id="end-label" for="end-datepicker">End: </label></th>
+                </tr><tr>
+                    <td><input class="datepicker-input" id="start-datepicker" name="date" type="text" size="30" autofocus="false"></td>
+                    <td><input class="datepicker-input" id="end-datepicker" name="date" type="text" size="30" autofocus="false"></td>
+                </tr><tr>
+                  <td><input class="timepicker-input" id="start-timepicker" type="time" name="time" size="30" autofocus="false"></td>
+                  <td><input class="timepicker-input" id="end-timepicker" type="time" name="time" size="30" autofocus="false"></td>
+                </tr>
+            </table>
+        </li>
+        <li>
+          <label for="room">Room: </label><select name="room" id="room-select">
+            <option value="R">Live room</option>
+            <option value="L">Control room</option>
+            <option value="B">Both Rooms</option></select>
+        </li>
+        <li>
+          <label for="title">Band: </label><div id="title"></div>
+        </li>
+        <li id="creatorWrapper">
+          <label for="creator">Created by: </label><div id="creator"></div>
+        </li>
+        <li>
+          <label for="body">Info: </label><textarea id="body" name="body"></textarea>
+        </li>
+        <li id="editAllOptions">
+          <label for="editAllCheckbox"><input type="checkbox" name="editAllCheckbox" id="editAllCheckbox">Edit all events in series</label>
+        </li>
+        <li>
+          <button type="button" class="ui-state-default ui-corner-all" id="recurringOptionsButton" onclick="setRecurringVisibility(!recurringIsVisible);">Repeat</button><button type="button" id="switch-week-or-picker" class="ui-state-default ui-corner-all" onclick="setWeekLineVisibility(!weeklineIsVisible);">Weekly</button>
+        </li>
+        <li id="recurringOptions" style="display: none;">
+          <div id="days-series">
+              <label for="multi-datepicker">Select days: </label>
+              <input type="text" data-position='top left' data-language='en' data-multiple-dates=true data-multiple-dates-separator=", " id="multi-datepicker" name="multi-datepicker">
+          </div>
+            <div id="week-series" style="display: none;">
+                <table class="datepicker-table">
+                    <tr>
+                        <th><label class="datepicker-label" for="startdate">Start date: </label></th>
+                        <th><label class="datepicker-label" for="enddate">End date: </label></th>
+                    </tr><tr>
+                        <td><input class="datepicker-input" id="series-start-datepicker" name="startdate" type="text" size="30" autofocus="false"></td>
+                        <td><input class="datepicker-input" id="series-end-datepicker" name="enddate" type="text" size="30" autofocus="false"></td>
+                    </tr>
+                </table class="datepicker-table">
+                <div id="weekline-div">
+                  <span id="weekline" class="weekDays-white"></span>
+                </div>
+            </div>
+        </li>
+        <li>
+          <label name="errorMsg" id="errorMsg"></label>
+        </li>
+      </ul>
+    </form>
+  </div>
+</div>
+</body>
+</html>
