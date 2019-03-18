@@ -5,7 +5,9 @@
   "main": "dbConnector.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node ./dbConnector.js"
+    "start": "node ./dbConnector.js",
+    "scripts": "gulp scripts",
+    "styles": "gulp styles"
   },
   "repository": {
     "type": "git",
