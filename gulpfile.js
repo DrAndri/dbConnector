@@ -1,6 +1,7 @@
 const gulp = require('gulp');
-var csso = require('gulp-csso');
-var uglify = require('gulp-uglify');
+const csso = require('gulp-csso');
+const uglify = require('gulp-uglify');
+const autoprefixer = require('gulp-autoprefixer');
 
 // Set the browser that you want to support
 const AUTOPREFIXER_BROWSERS = [
