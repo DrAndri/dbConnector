@@ -47,7 +47,7 @@ process.setMaxListeners(0);
 
 var pool = mysql.createPool({
     connectionLimit : 100,
-    host     : 'localhost',
+    host     : '192.168.1.110',
     user     : mysqlUser,
     password : mysqlPass,
     database : mysqlDatabase
@@ -171,6 +171,8 @@ app.post('/login', (req, res, next) => {
 })
 
 function ensureLoggedIn(req, res, next) {
+  console.log("SESSSSSSS");
+  console.log(req.session);
     if (req.isAuthenticated()) {
         return next();
     }
@@ -182,7 +184,7 @@ app.use("/", ensureLoggedIn, express.static(__dirname + '/html'));
 googleMgr.init();
 
 let sendQuery = function (query, args, authorized){
-    if(authorized) {
+    if(/*authorized*/true) {
         return new Promise(
             function(resolve, reject) {
               pool.getConnection(function(err,connection){
@@ -227,6 +229,8 @@ io.on('connection', function(socket){
     var googleAuthenticated;
     var authenticated;
     var currentUser = {};
+    console.log("SOCKET SESSION");
+    console.log(socket.handshake.session);
 
     if(socket.handshake.session.passport && socket.handshake.session.passport.user) {
         authenticated = true;
@@ -252,12 +256,36 @@ io.on('connection', function(socket){
         });
     }
     function sendSocketQuery(sql, args) {
+      console.log("QUERY");
+      console.log(socket.handshake.session.passport);
+      if(!authenticated && socket.handshake.session.passport.user) {
+        return findUserById(socket.handshake.session.passport.user)
+        .then(users => populateBandsOnUsers(users))
+        .then(function(users) {
+          if(users.length > 0) {
+            authenticated = true;
+            currentUser = users[0];
+            delete currentUser.password;
+            return currentUser;
+          } else {
+            authenticated = false;
+            return false;
+          }
+        })
+        .then(sendQuery(sql, args, authenticated))
+        .catch(function(reason){
+            console.log("PROMISE REJECTED:");
+            console.log(reason);
+            socket.emit("warning", {msg: reason});
+        });
+      } else {
         return sendQuery(sql, args, authenticated)
         .catch(function(reason){
             console.log("PROMISE REJECTED:");
             console.log(reason);
             socket.emit("warning", {msg: reason});
         });
+      }
     }
     //Broadcasts creation, deletion and editing of an event
     function broadcastEvent(type, event){
@@ -357,13 +385,11 @@ io.on('connection', function(socket){
         });
         sendSocketQuery('INSERT INTO ' + tbl_events + ' (start, end, title, body, creator, room, series) VALUES ?', [eventRows])
         .then(function(rows) {
-          console.log(rows);
             var offset = 0;
             events.forEach(function(event){
               event.id = rows.insertId + offset;
               offset++;
             });
-            console.log(events);
             if(broadcast) {
                 broadcastEvent("events", events);
             } else {
@@ -372,10 +398,10 @@ io.on('connection', function(socket){
             for (var i = 0; i < events.length; i++) {
               var event = events[i];
               event.id = rows.insertId + i;
-              googleMgr.createEvent(events[i], attendees)
-              .then(function(google_id){
-                sendSocketQuery('UPDATE ' + tbl_events + ' SET google_id=? WHERE id=?', [google_id, event.id])
-              });
+              // googleMgr.createEvent(events[i], attendees)
+              // .then(function(google_id){
+              //   sendSocketQuery('UPDATE ' + tbl_events + ' SET google_id=? WHERE id=?', [google_id, event.id])
+              // });
             }
 
             //TODO:test charge and event_to_account
