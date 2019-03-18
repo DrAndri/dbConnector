@@ -17,15 +17,15 @@ RUN npm install gulp-cli -g
 
 RUN npm install gulp -D
 
-RUN npm run scripts
-
-RUN npm run styles
-
 # If you are building your code for production
 # RUN npm ci --only=production
 
 # Bundle app source
 COPY . .
+
+RUN npm run scripts
+
+RUN npm run styles
 
 EXPOSE 3333
 CMD [ "npm", "start" ]
