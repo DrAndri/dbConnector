@@ -65,12 +65,6 @@ input, textarea, select {
     font-weight: inherit;
 }
 
-input, textarea, select {
-
-* font-size:
-    100%;
-}
-
 legend {
     color: #000;
 }
