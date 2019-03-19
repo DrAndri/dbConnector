@@ -1,4 +1,4 @@
-var socket = io.connect("https://starmyri.ga");
+var socket = io.connect("https://192.168.1.110");
 var currentUser = {};
 var users = [];
 //TODO: implement better id management;
