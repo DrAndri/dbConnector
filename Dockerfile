@@ -13,10 +13,6 @@ RUN npm --prefix ./meniga-client install ./meniga-client
 
 RUN npm install
 
-RUN npm install gulp-cli -g
-
-RUN npm install gulp -D
-
 # If you are building your code for production
 # RUN npm ci --only=production
 
