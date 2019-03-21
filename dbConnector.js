@@ -47,7 +47,7 @@ process.setMaxListeners(0);
 
 var pool = mysql.createPool({
     connectionLimit : 100,
-    host     : '192.168.1.110',
+    host     : 'localhost',
     user     : mysqlUser,
     password : mysqlPass,
     database : mysqlDatabase
@@ -168,6 +168,11 @@ app.post('/login', (req, res, next) => {
   } else {
     return res.send('fokk off');
   }
+})
+
+app.get('/logoff', (req, res, next) => {
+  req.logout();
+  return res.redirect('/');
 })
 
 function ensureLoggedIn(req, res, next) {

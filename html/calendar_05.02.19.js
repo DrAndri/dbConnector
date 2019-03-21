@@ -1,4 +1,4 @@
-var socket = io.connect("https://192.168.1.110");
+var socket = io.connect("https://starmyri.ga");
 var currentUser = {};
 var users = [];
 //TODO: implement better id management;
@@ -23,7 +23,7 @@ var magicConfigTitle = {
                   };
 function signOut(){
   socket.emit('signOut');
-  window.setTimeout(location.reload(), 5000);
+  window.location.href = "/logoff";
 }
 function createCookie(name,value) {
     if (typeof(Storage) !== "undefined") {
