@@ -47,7 +47,7 @@ process.setMaxListeners(0);
 
 var pool = mysql.createPool({
     connectionLimit : 100,
-    host     : 'localhost',
+    host     : '192.168.1.110',
     user     : mysqlUser,
     password : mysqlPass,
     database : mysqlDatabase
