@@ -277,7 +277,6 @@ io.on('connection', function(socket){
             socket.emit("warning", {msg: reason});
         });
       } else {
-        console.log("WIERD STUFF")
         return sendQuery(sql, args, authenticated)
         .catch(function(reason){
             console.log("PROMISE REJECTED:");
