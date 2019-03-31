@@ -299,7 +299,7 @@
 
          if (options.buttons) {
             calendarNavHtml = "<div class=\"wc-nav\">\
-                    <a id='owncloud' title='Nextcloud' href='https://starmyri.ga/nextcloud' onclick='ga(\'send\', {hitType: \'event\', eventCategory: \'button\', eventAction: \'owncloud\'});'><i class='fas fa-server'></i></a>\
+                    <a id='owncloud' title='Nextcloud' href='https://files.starmyri.ga' onclick='ga(\'send\', {hitType: \'event\', eventCategory: \'button\', eventAction: \'owncloud\'});'><i class='fas fa-server'></i></a>\
                     <div class=\"wc-todayBtn\" title='Today'><i class='fas fa-home'></i></div>\
                     <div class=\"wc-prev\" title='Previous'><i class='fas fa-arrow-left'></i></div>\
                     <div class=\"wc-next\" title='Next'><i class='fas fa-arrow-right'></i></div>\

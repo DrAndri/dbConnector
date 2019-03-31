@@ -176,8 +176,6 @@ app.get('/logoff', (req, res, next) => {
 })
 
 function ensureLoggedIn(req, res, next) {
-  console.log("SESSSSSSS");
-  console.log(req.session);
     if (req.isAuthenticated()) {
         return next();
     }
@@ -234,9 +232,6 @@ io.on('connection', function(socket){
     var googleAuthenticated;
     var authenticated;
     var currentUser = {};
-    console.log("SOCKET SESSION");
-    console.log(socket.handshake.session);
-
     if(socket.handshake.session.passport && socket.handshake.session.passport.user) {
         authenticated = true;
         var authPromise = findUserById(socket.handshake.session.passport.user)
@@ -261,8 +256,6 @@ io.on('connection', function(socket){
         });
     }
     function sendSocketQuery(sql, args) {
-      console.log("QUERY");
-      console.log(socket.handshake.session.passport);
       if(!authenticated && socket.handshake.session.passport.user) {
         return findUserById(socket.handshake.session.passport.user)
         .then(users => populateBandsOnUsers(users))
@@ -284,6 +277,7 @@ io.on('connection', function(socket){
             socket.emit("warning", {msg: reason});
         });
       } else {
+        console.log("WIERD STUFF")
         return sendQuery(sql, args, authenticated)
         .catch(function(reason){
             console.log("PROMISE REJECTED:");
